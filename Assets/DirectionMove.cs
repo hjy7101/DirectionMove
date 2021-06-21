@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,22 +11,70 @@ public class DirectionMove : MonoBehaviour
     {
         animator = GetComponent<Animator>();
         lastMoveDirection = transform.forward;
+
+        //애니메이션 길이를 애니메이터에서 가져오자.
+        //// 
+        //foreach (var animationClip in animator.runtimeAnimatorController.animationClips)
+        //{
+        //    aimationLength[animationClip.name] = animationClip.length; // aimationLength["Attack"] = 1.4;
+        //}
     }
 
-    // Update is called once per frame
+    //Dictionary<string, float> aimationLength = new Dictionary<string, float>();
+
     void Update()
     {
         Vector3 move = Vector3.zero; // move = new Vector3(0, 0, 0)
-        if (Input.GetKey(KeyCode.A)) move.x = -1;
-        if (Input.GetKey(KeyCode.D)) move.x = 1;
+
+        // 어택을 했으면 어택 애니메이션 진행중인 동안은 
+        // Run과 Idle을 하지 않게 하자
+        // 각 애니메이션의 길이가 필요하다.
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            //어택에니메이션이 끝났을때 state = None
+            StartCoroutine(AttackCo());
+        }
+
+        if (State != StateType.Attack)
+        {
+            move = MoveAndIdle(move);
+        }
+
+        transform.forward = Vector3.Slerp(transform.forward
+            , move, roateLerp);
+    }
+
+    // 실제 애니메이션 길이보다 먼저 움직이게 하자.
+    public float attackAnimationWaitTime = 0.9f;
+    IEnumerator AttackCo()
+    {
+        State = StateType.Attack;
+
+        yield return null;
+        float attackAnimationTime = GetCurrentAimationTime();
+        attackAnimationTime = attackAnimationTime * attackAnimationWaitTime;
+        yield return new WaitForSeconds(attackAnimationTime);
+        State = StateType.None;
+    }
+
+    private float GetCurrentAimationTime()
+    {
+        var state = animator.GetCurrentAnimatorStateInfo(0);
+        return state.length;
+    }
+
+
+    /// <summary>
+    /// Move/Idle애니메이션, 실제 이동
+    /// </summary>
+    /// <param name="move"></param>
+    /// <returns></returns>
+    Vector3 MoveAndIdle(Vector3 move)
+    {
+        if (Input.GetKey(KeyCode.D)) move.x = -1;
+        if (Input.GetKey(KeyCode.A)) move.x = 1;
         if (Input.GetKey(KeyCode.W)) move.z = 1;
         if (Input.GetKey(KeyCode.S)) move.z = -1;
-
-        if(Input.GetKeyDown(KeyCode.Space))
-        {
-            state = StateType.Attack;
-            animator.Play("Attack", 1);
-        }
 
         if (move != Vector3.zero)
         {
@@ -35,39 +84,49 @@ public class DirectionMove : MonoBehaviour
 
             //transform.forward = move; // 이코드 있으면 작동안함.
             lastMoveDirection = move;
-            state = StateType.Run;
-            animator.Play("Run");
+            State = StateType.Run;
         }
         else
         {
             move = lastMoveDirection;
-            state = StateType.Idle;
-            animator.Play("Idle");
-        }
-
-        transform.forward = Vector3.Slerp(transform.forward
-            , move, roateLerp);
-
-        //transform.forward = transform.forward; // roateLerp ==0; 오른쪽,
-        //transform.forward = move; // roateLerp == 1;
-
-        //roateLerp: 0.05
-        //transform.forward : 앞쪽,100
-        //move; 오른쪽(0)
-        //    // 1frame : 95
-        //    // 2frame : 91
-        //    // 3frame : 87
-        //    // 4frame : 84
-        //    // 5frame : 83
-        //    // 60 frame : 0
+            State = StateType.Idle;
+        };
+        return move;
     }
     public float speed = 5;
     public float roateLerp = 0.5f;
     public Vector3 lastMoveDirection;
 
+    public StateType State
+    {
+        get { return state; }
+        set
+        {
+            if (state == value)
+                return;
+
+            state = value;
+
+            var animationInfo = blendingInfos.Find(x => x.state == state);
+            if (animationInfo != null)
+                animator.CrossFade(animationInfo.clipName, animationInfo.time);
+        }
+    }
     public StateType state = StateType.Idle;
+
     public enum StateType
     {
-        Idle, Run, Jump, Attack,
+        None,  Idle,  Run, Jump, Attack,
+    }
+
+
+    public List<BlendingInfo> blendingInfos;
+
+    [System.Serializable] // 인스펙터 아래 클래스 생성
+    public class BlendingInfo
+    {
+        public StateType state;
+        public string clipName;
+        public float time;
     }
 }
